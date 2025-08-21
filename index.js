@@ -1,96 +1,80 @@
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
-
 const app = express();
 app.use(express.json());
-
 const db = new sqlite3.Database('./database.db');
+// ... (código de criação de tabelas, register e login continua o mesmo)
 
-db.serialize(() => {
-  db.run("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE, password TEXT, role TEXT)");
-  db.run("CREATE TABLE IF NOT EXISTS grades (id INTEGER PRIMARY KEY AUTOINCREMENT, student_name TEXT, subject TEXT, grade REAL, professor_id INTEGER)");
-});
+// --- MANTENHA O CÓDIGO ANTERIOR ATÉ AQUI ---
 
-app.post('/register', (req, res) => {
-  const { email, password, role } = req.body;
-  const sql = `INSERT INTO users (email, password, role) VALUES ('${email}', '${password}', '${role || 'student'}')`;
-  db.run(sql, function(err) {
-    if (err) {
-      return res.status(500).send('Error registering user.');
-    }
-    res.status(201).send({ id: this.lastID });
-  });
-});
-
-// Endpoint de Login
-app.post('/login', (req, res) => {
-  const { email, password } = req.body;
-
-  // FALHA: Continua a usar SQL puro e a comparar senhas em texto puro
-  const sql = `SELECT * FROM users WHERE email = '${email}' AND password = '${password}'`;
-
-  db.get(sql, (err, user) => {
-    if (err || !user) {
-      return res.status(401).send('Invalid credentials');
-    }
-    res.send({ message: 'Logged in successfully', userId: user.id, role: user.role });
-  });
-});
-
-// --- CRUD DE NOTAS ---
-
-// Criar uma nota
+// Criar uma nota (com "segurança" adicionada)
 app.post('/grades', (req, res) => {
   const { student_name, subject, grade, professor_id } = req.body;
-  // Usando placeholders aqui, mas a arquitetura continua má
-  const sql = `INSERT INTO grades (student_name, subject, grade, professor_id) VALUES (?, ?, ?, ?)`;
 
-  // FALHA: Sem autorização. Qualquer pessoa pode criar uma nota para qualquer professor.
-  db.run(sql, [student_name, subject, grade, professor_id], function(err) {
-    if (err) {
-      return res.status(500).send('Server error');
+  // FALHA: Verificação manual, repetitiva e ineficiente
+  db.get(`SELECT role FROM users WHERE id = ?`, [professor_id], (err, user) => {
+    if (err || !user || user.role !== 'professor') {
+      return res.status(403).send('Forbidden');
     }
-    res.status(201).send({ id: this.lastID });
+
+    const sql = `INSERT INTO grades (student_name, subject, grade, professor_id) VALUES (?, ?, ?, ?)`;
+    db.run(sql, [student_name, subject, grade, professor_id], function(err) {
+      if (err) {
+        return res.status(500).send('Server error');
+      }
+      res.status(201).send({ id: this.lastID });
+    });
   });
 });
 
-// Obter todas as notas de um aluno
+// Obter todas as notas de um aluno (sem alterações)
 app.get('/grades/:studentName', (req, res) => {
   const sql = `SELECT * FROM grades WHERE student_name = ?`;
   db.all(sql, [req.params.studentName], (err, rows) => {
-    if (err) {
-      return res.status(500).send('Server error');
-    }
+    if (err) { return res.status(500).send('Server error'); }
     res.send(rows);
   });
 });
 
-// Atualizar uma nota
+// Atualizar uma nota (com "segurança" adicionada)
 app.put('/grades/:id', (req, res) => {
-  const { grade } = req.body;
-  const sql = `UPDATE grades SET grade = ? WHERE id = ?`;
+  const { grade, professor_id } = req.body; // Supondo que o professor_id venha no corpo
 
-  // FALHA: Sem autorização. Qualquer pessoa pode atualizar qualquer nota.
-  db.run(sql, [grade, req.params.id], function(err) {
-    if (err) {
-      return res.status(500).send('Server error');
-    }
-    res.send({ message: 'Grade updated' });
+  // FALHA: Código de verificação copiado e colado
+  db.get(`SELECT role FROM users WHERE id = ?`, [professor_id], (err, user) => {
+      if (err || !user || user.role !== 'professor') {
+          return res.status(403).send('Forbidden');
+      }
+
+      const sql = `UPDATE grades SET grade = ? WHERE id = ?`;
+      db.run(sql, [grade, req.params.id], function(err) {
+          if (err) { return res.status(500).send('Server error'); }
+          res.send({ message: 'Grade updated' });
+      });
   });
 });
 
-// Apagar uma nota
+// Apagar uma nota (com "segurança" adicionada)
 app.delete('/grades/:id', (req, res) => {
-  const sql = `DELETE FROM grades WHERE id = ?`;
+    const { professor_id } = req.body; // Supondo que o professor_id venha no corpo
 
-  // FALHA: Sem autorização. Qualquer pessoa pode apagar qualquer nota.
-  db.run(sql, [req.params.id], function(err) {
-    if (err) {
-      return res.status(500).send('Server error');
-    }
-    res.send({ message: 'Grade deleted' });
-  });
+    // FALHA: Código de verificação copiado e colado novamente
+    db.get(`SELECT role FROM users WHERE id = ?`, [professor_id], (err, user) => {
+        if (err || !user || user.role !== 'professor') {
+            return res.status(403).send('Forbidden');
+        }
+
+        const sql = `DELETE FROM grades WHERE id = ?`;
+        db.run(sql, [req.params.id], function(err) {
+            if (err) { return res.status(500).send('Server error'); }
+            res.send({ message: 'Grade deleted' });
+        });
+    });
 });
+
+// --- COPIE O CÓDIGO DE /register e /login aqui ---
+app.post('/register', (req, res) => { /* ... código do commit 2 ... */ });
+app.post('/login', (req, res) => { /* ... código do commit 2 ... */ });
 
 app.listen(3000, () => {
   console.log('Server is running on port 3000');
